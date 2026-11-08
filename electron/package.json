@@ -1,0 +1,8 @@
+{
+  "name": "chicky-drip-desktop",
+  "version": "1.0.0",
+  "description": "Chicky Drip online catering desktop app",
+  "main": "main.cjs",
+  "author": "Chicky Drip",
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,12 @@
+# Roadmap
+- [x] Chicky Drip catering site: menu (sandwiches, 6pc mini drum & thigh, 3pc large drum, sides), 10 flavors
+- [x] Ordering with accounts
+- [x] Rewards: 10 orders = free $15 meal, progress meter
+- [x] Admin can edit site text
+- [x] Match uploaded Chicky Drip look exactly (black/red/orange/yellow drip)
+- [x] Update $9 meals to include one side; add dips, drinks and optional sandwich slaw
+- [ ] Family meals and Hawaiian rolls: waiting for approval of proposed counts and prices
+- [ ] Add waffle fries and loaded cheese fries after proposed prices are approved
+- [x] Create a portable Windows executable ZIP for the published catering website (Windows execution unverified)
+- [x] Fix preselected dip validation; include one free dip and allow extra dips
+- [x] Allow customers to remove cart items and cancel their new or confirmed orders
