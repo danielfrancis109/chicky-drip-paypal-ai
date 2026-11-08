@@ -7,7 +7,9 @@ import { PRODUCTS, FLAVOR_IDS, SIDE_IDS, SODA_CHOICES, JUICE_CHOICES, includesSi
 import { useContent } from "@/lib/content";
 import { useAuth } from "@/lib/auth";
 import { useMyOrders } from "@/lib/useMyOrders";
-import { placeOrder } from "@/lib/orders.functions";
+import { createPayPalOrder } from "@/lib/checkout.functions";
+import { PayPalCheckout } from "@/components/PayPalCheckout";
+import { CateringAssistant } from "@/components/CateringAssistant";
 import { DripMeter } from "@/components/DripMeter";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
@@ -32,7 +34,7 @@ function OrderPage() {
   const { status } = useMyOrders(user?.id);
   const qc = useQueryClient();
   const nav = useNavigate();
-  const submitFn = useServerFn(placeOrder);
+  const freeFn = useServerFn(createPayPalOrder);
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [product, setProduct] = useState<ProductId>("mini6");
   const [flavor, setFlavor] = useState("flavor_1");
@@ -62,15 +64,28 @@ function OrderPage() {
     setQty(1);
   };
 
-  const submit = async (e: React.FormEvent) => {
+  const payload = { ...form, items: lines, use_reward: useReward && status.available > 0 };
+  const validate = () => {
+    if (!lines.length) return "Add something to your order first";
+    if (!form.customer_name.trim()) return "Enter your name";
+    if (form.phone.trim().length < 7) return "Enter a phone number we can call";
+    return null;
+  };
+  const paid = async (msg: string) => {
+    toast.success(msg);
+    setLines([]); setUseReward(false);
+    await qc.invalidateQueries({ queryKey: ["my_orders"] });
+    await qc.invalidateQueries({ queryKey: ["all_orders"] });
+    nav({ to: "/rewards" });
+  };
+  const redeemFree = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!lines.length) { toast.error("Add something to your order first"); return; }
+    const problem = validate();
+    if (problem) { toast.error(problem); return; }
     setBusy(true);
     try {
-      await submitFn({ data: { ...form, items: lines, use_reward: useReward && status.available > 0 } });
-      toast.success("Order placed! We'll be in touch to confirm.");
-      await qc.invalidateQueries({ queryKey: ["my_orders"] });
-      nav({ to: "/rewards" });
+      await freeFn({ data: payload });
+      await paid("Free meal redeemed! We'll call to confirm.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not place order");
     }
@@ -91,6 +106,7 @@ function OrderPage() {
       <div>
         <h1 className="text-fire text-6xl">Build Your Order</h1>
         <p className="mt-2 text-muted-foreground">{t("order_note")}</p>
+        <CateringAssistant onAdd={(planned) => setLines((current) => [...current, ...planned].slice(0, 50))} />
         <div className="mt-6 grid gap-3 border-y-2 border-primary py-5 sm:grid-cols-2">
           <label className="min-w-0 text-sm text-muted-foreground">Item
           <select aria-label="Item" className={input} value={product} onChange={(e) => {
@@ -124,7 +140,7 @@ function OrderPage() {
           <Button type="button" variant="outline" onClick={() => { setProduct("dip"); setFlavor(dip); }} className="sm:col-span-2"><Plus />Extra dips · $0.75 each</Button>
         </div>
 
-        <form onSubmit={submit} className="mt-6 grid gap-3 rounded-2xl border-2 border-border bg-card p-5 sm:grid-cols-2">
+        <form onSubmit={redeemFree} className="mt-6 grid gap-3 rounded-2xl border-2 border-border bg-card p-5 sm:grid-cols-2">
           <input className={input} required maxLength={100} placeholder="Your name" value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
           <input className={input} required maxLength={30} placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           <label className="text-sm text-muted-foreground sm:col-span-2">Event date
@@ -137,9 +153,18 @@ function OrderPage() {
               Use my free meal ($15 off)
             </label>
           )}
-          <Button type="submit" disabled={busy || !user || !lines.length} className="h-12 font-display text-2xl text-primary-foreground sm:col-span-2">
-            {busy ? "Placing..." : "Place Order"}
-          </Button>
+          <div className="sm:col-span-2">
+            <h2 className="mb-2 text-2xl">Pay with PayPal{totals.total > 0 ? ` · $${totals.total.toFixed(2)}` : ""}</h2>
+            {!lines.length ? (
+              <p className="text-sm text-muted-foreground">Add items (or use the Drip Planner) to check out.</p>
+            ) : totals.total <= 0 ? (
+              <Button type="submit" disabled={busy || !user} className="h-12 w-full font-display text-2xl text-primary-foreground">
+                {busy ? "Placing..." : "Redeem free meal"}
+              </Button>
+            ) : (
+              <PayPalCheckout payload={payload} validate={validate} onPaid={() => paid("Paid! Your order is confirmed and your Drip Meter just filled up.")} />
+            )}
+          </div>
         </form>
       </div>
 

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { rewardStatus } from "./menu";
+import { meterStatus } from "./menu";
 
 export function useMyOrders(userId?: string) {
   const q = useQuery({
@@ -12,7 +12,7 @@ export function useMyOrders(userId?: string) {
       return data;
     },
   });
-  const valid = (q.data ?? []).filter((o) => o.status !== "cancelled");
-  const status = rewardStatus(valid.filter((o) => !o.used_reward).length, valid.filter((o) => o.used_reward).length);
+  // Only paid (PayPal) or legacy pay-on-pickup orders fill the Drip Meter; abandoned checkouts don't.
+  const status = meterStatus(q.data ?? []);
   return { ...q, status };
 }

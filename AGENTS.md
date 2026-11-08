@@ -15,3 +15,6 @@
 - Chicken line options and dip IDs are stored in orders.items and validated on the server; why: included choices must survive submission and be visible to staff.
 - Customer cancellation uses an authenticated server function that verifies ownership and updates only status; why: customers must not be able to forge totals or cancel someone else's order.
 - electron/ is an isolated portable Windows wrapper of the published HTTPS site, with no Node access in its web view; why: the full-stack site needs online hosting and the desktop package must not bundle credentials or site source.
+- Online payment uses PayPal Orders v2: server creates and captures in checkout.server.ts, priced from menu.ts; why: clients and AI can't set prices, and only captured payments count.
+- The Drip Meter counts only orders with payment_status paid or legacy (meterStatus in menu.ts); why: abandoned checkouts must not earn or spend rewards.
+- AI plans are zod-validated and re-checked with validateOrderLine, with a labeled rule-based fallback; why: the model can't invent menu items and the demo works without a key.

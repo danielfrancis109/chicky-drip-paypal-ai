@@ -17,12 +17,17 @@ export type Database = {
       orders: {
         Row: {
           created_at: string
+          currency: string
           customer_name: string
           discount: number
           event_date: string | null
           id: string
           items: Json
           notes: string | null
+          paid_at: string | null
+          payment_status: string
+          paypal_capture_id: string | null
+          paypal_order_id: string | null
           phone: string
           status: string
           subtotal: number
@@ -32,12 +37,17 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          currency?: string
           customer_name: string
           discount?: number
           event_date?: string | null
           id?: string
           items: Json
           notes?: string | null
+          paid_at?: string | null
+          payment_status?: string
+          paypal_capture_id?: string | null
+          paypal_order_id?: string | null
           phone: string
           status?: string
           subtotal: number
@@ -47,12 +57,17 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          currency?: string
           customer_name?: string
           discount?: number
           event_date?: string | null
           id?: string
           items?: Json
           notes?: string | null
+          paid_at?: string | null
+          payment_status?: string
+          paypal_capture_id?: string | null
+          paypal_order_id?: string | null
           phone?: string
           status?: string
           subtotal?: number

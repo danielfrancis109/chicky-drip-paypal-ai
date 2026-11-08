@@ -59,3 +59,25 @@ export function rewardStatus(paidOrders: number, rewardsUsed: number) {
     toNext: REWARD_EVERY - (paidOrders % REWARD_EVERY),
   };
 }
+
+// ---- Payments + Drip Meter (added for the PayPal AI Hackathon) ----
+// "legacy" = placed before online payments existed (pay-on-pickup); "paid" = captured via PayPal
+// or fully covered by a free-meal reward. Only these count toward the Drip Meter, so an
+// abandoned PayPal checkout ("pending") never fills the meter or burns a reward.
+export type PaymentStatus = "pending" | "paid" | "legacy" | "failed" | "refunded";
+export type MeterOrder = { status: string; used_reward: boolean; payment_status?: string | null };
+
+export const countsTowardMeter = (o: MeterOrder) =>
+  o.status !== "cancelled" && (o.payment_status === "paid" || o.payment_status === "legacy" || o.payment_status == null);
+
+export function meterStatus(orders: MeterOrder[]) {
+  const valid = orders.filter(countsTowardMeter);
+  return rewardStatus(valid.filter((o) => !o.used_reward).length, valid.filter((o) => o.used_reward).length);
+}
+
+/** Customers may self-cancel only unpaid/legacy orders; paid PayPal orders need the owner to refund. */
+export const canCustomerCancel = (o: { status: string; payment_status?: string | null }) =>
+  canCancelOrder(o.status) && o.payment_status !== "paid";
+
+/** PayPal wants amounts as strings with exactly two decimals. */
+export const toPayPalAmount = (n: number) => (Math.round(n * 100) / 100).toFixed(2);

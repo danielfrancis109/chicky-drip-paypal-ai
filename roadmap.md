@@ -10,3 +10,7 @@
 - [x] Create a portable Windows executable ZIP for the published catering website (Windows execution unverified)
 - [x] Fix preselected dip validation; include one free dip and allow extra dips
 - [x] Allow customers to remove cart items and cancel their new or confirmed orders
+- [x] PayPal checkout (Orders v2, sandbox) with server-side pricing; Drip Meter fills on captured payment; free meal as PayPal discount
+- [x] Drip Planner AI catering assistant (menu-validated, one-click add to cart, rule-based fallback)
+- [x] Admin: payment badges, PayPal capture ids, AI Insights
+- [ ] Owner-side refunds for paid orders from admin

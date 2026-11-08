@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
 import { useMyOrders } from "@/lib/useMyOrders";
 import { DripMeter } from "@/components/DripMeter";
+import { PaymentBadge } from "@/components/PaymentBadge";
 import { useContent } from "@/lib/content";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
@@ -9,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cancelOrder } from "@/lib/orders.functions";
-import { canCancelOrder, PRODUCTS, lineOptions, type OrderLine } from "@/lib/menu";
+import { canCustomerCancel, PRODUCTS, lineOptions, type OrderLine } from "@/lib/menu";
 
 export const Route = createFileRoute("/rewards")({
   head: () => ({
@@ -63,7 +64,7 @@ function Rewards() {
                 <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium">{new Date(o.created_at).toLocaleDateString()} {o.used_reward && <span className="ml-2 rounded bg-drip px-2 text-xs text-drip-foreground">FREE MEAL</span>}</div>
-                  <div className="text-sm capitalize text-muted-foreground">{o.status}</div>
+                  <div className="text-sm capitalize text-muted-foreground">{o.status} · <PaymentBadge status={o.payment_status} /></div>
                 </div>
                 <div className="font-display text-2xl text-drip">${Number(o.total).toFixed(2)}</div>
                 </div>
@@ -73,7 +74,7 @@ function Rewards() {
                     <div className="text-muted-foreground">{lineOptions(line)}{line.dip && ` · Free dip: ${t(line.dip)}`}</div>
                   </li>)}
                 </ul>
-                {canCancelOrder(o.status) && <div className="mt-3">
+                {canCustomerCancel(o) && <div className="mt-3">
                   {confirmId === o.id ? <div className="flex flex-wrap items-center gap-2"><span className="text-sm">Cancel this order?</span><Button disabled={busy} variant="destructive" onClick={() => cancel(o.id)}>Yes, cancel order</Button><Button disabled={busy} variant="outline" onClick={() => setConfirmId(null)}>Keep order</Button></div> : <Button variant="outline" onClick={() => setConfirmId(o.id)}>Cancel order</Button>}
                 </div>}
               </div>
