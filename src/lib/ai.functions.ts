@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { DEFAULT_CONTENT } from "./content";
+import { DEFAULT_CONTENT } from "./content-defaults";
 import { FLAVOR_IDS } from "./menu";
 import type { FlavorInfo } from "./ai/catering-plan";
 import type { SupabaseClient } from "@supabase/supabase-js";

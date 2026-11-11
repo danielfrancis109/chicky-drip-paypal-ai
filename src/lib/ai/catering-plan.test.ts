@@ -6,6 +6,11 @@ import {
   fallbackPlan,
   parseRequest,
   sanitizeAiPlan,
+  fitBudget,
+  mergeLines,
+  mergeRequest,
+  servingsOf,
+  topUpPlan,
   type FlavorInfo,
 } from "./catering-plan";
 import { planCateringOrder, readAiConfig } from "./llm.server";
@@ -145,17 +150,57 @@ describe("planCateringOrder (OpenAI-compatible API, mocked fetch)", () => {
     expect(body.messages[0].content).toContain("Honey Drip");
     expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer test-key");
   });
-  it("flags plans that go over budget", async () => {
+  it("fits over-budget plans under budget, keeps everyone fed, and retries once with feedback", async () => {
+    const fetchImpl = reply(
+      JSON.stringify({
+        summary: "",
+        items: [{ product: "mini6", qty: 40, flavor: "flavor_1", side: "fries" }],
+      }),
+    );
     const plan = await planCateringOrder("for 40 people budget $300", flavors, {
       config: cfg,
-      fetchImpl: reply(
-        JSON.stringify({
-          summary: "",
-          items: [{ product: "mini6", qty: 40, flavor: "flavor_1", side: "fries" }],
-        }),
-      ),
+      fetchImpl,
     });
-    expect(plan.warnings.join(" ")).toMatch(/over your \$300/);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(
+      (fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1].body as string,
+    );
+    expect(retryBody.messages[1].content).toMatch(
+      /previous plan had these problems: .*over the \$300/,
+    );
+    expect(plan.total).toBeLessThanOrEqual(300);
+    expect(servingsOf(plan.lines)).toBeGreaterThanOrEqual(40);
+    expect(plan.warnings).toContain("Adjusted portions to fit your budget.");
+    expect(plan.summary).toMatch(/^Feeds 40 of 40 guests/);
+  });
+  it("tops up underfed plans and uses the model's headcount when the text is ambiguous", async () => {
+    const fetchImpl = reply(
+      JSON.stringify({
+        headcount: 20,
+        summary: "Mild and tasty!",
+        items: [{ product: "mini6", qty: 10, flavor: "flavor_1", side: "fries" }],
+      }),
+    );
+    const plan = await planCateringOrder("party for 15 kids and 5 adults, no spicy", flavors, {
+      config: cfg,
+      fetchImpl,
+    });
+    expect(servingsOf(plan.lines)).toBe(20);
+    expect(plan.warnings.join(" ")).toMatch(/Added 10 serving/);
+    expect(plan.summary).toBe(
+      "Feeds 20 of 20 guests · 0 spicy / 20 mild · $180.00. Mild and tasty!",
+    );
+  });
+  it("never repeats model-claimed prices in the summary", async () => {
+    const fetchImpl = reply(
+      JSON.stringify({
+        summary: "Only $5 total!",
+        items: [{ product: "mini6", qty: 2, flavor: "flavor_1", side: "fries" }],
+      }),
+    );
+    const plan = await planCateringOrder("lunch for 2", flavors, { config: cfg, fetchImpl });
+    expect(plan.summary).not.toMatch(/\$5/);
+    expect(plan.summary).toMatch(/\$18.00/);
   });
   it("falls back (labeled) on invalid JSON, HTTP errors, or nothing valid", async () => {
     for (const fetchImpl of [
@@ -243,5 +288,41 @@ describe("owner insights", () => {
     });
     expect(s.topFlavors[0]).toEqual({ name: "Buffalo Bounce", qty: 10 });
     expect(insightText(s)).toMatch(/2 paid orders brought in \$108.00/);
+  });
+});
+
+describe("deterministic repairs", () => {
+  it("fitBudget downgrades meals before removing food", () => {
+    const { lines } = fitBudget(
+      [{ product: "mini6", flavor: "flavor_1", dip: "flavor_1", side: "fries", qty: 10 }],
+      85,
+    );
+    expect(computeOrder(lines, false).total).toBeLessThanOrEqual(85);
+    expect(servingsOf(lines)).toBe(10);
+  });
+  it("topUpPlan respects the spicy split and the budget", () => {
+    const { lines } = topUpPlan([], { headcount: 10, spicyShare: 0.5, budget: 90 }, flavors);
+    expect(servingsOf(lines)).toBe(10);
+    expect(computeOrder(lines, false).total).toBeLessThanOrEqual(90);
+    const spicy = lines
+      .filter((l) => l.flavor && spicyIds.includes(l.flavor))
+      .reduce((s, l) => s + l.qty, 0);
+    expect(spicy).toBe(5);
+  });
+  it("mergeLines combines identical lines", () => {
+    expect(
+      mergeLines([
+        { product: "soda", drink: "Coke", qty: 2 },
+        { product: "soda", drink: "Coke", qty: 3 },
+      ]),
+    ).toEqual([{ product: "soda", drink: "Coke", qty: 5 }]);
+  });
+  it("mergeRequest takes the larger headcount", () => {
+    expect(
+      mergeRequest(
+        { headcount: 15, spicyShare: null, budget: 200 },
+        { headcount: 20, spicyShare: 0 },
+      ),
+    ).toEqual({ headcount: 20, spicyShare: 0, budget: 200 });
   });
 });

@@ -3,7 +3,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { DEFAULT_CONTENT } from "./content";
+import { DEFAULT_CONTENT } from "./content-defaults";
 import { checkoutSchema } from "./checkout.schema";
 import type { OrderStore, StoredOrder } from "./checkout.server";
 

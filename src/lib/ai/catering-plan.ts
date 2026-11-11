@@ -40,6 +40,11 @@ export const isSpicy = (f: FlavorInfo) => SPICY_WORDS.test(f.heat);
 /** The JSON shape we ask the model for. Everything is re-validated against the menu afterwards. */
 export const aiPlanSchema = z.object({
   summary: z.string().max(600).default(""),
+  // What the model understood from the request (helps with phrasing our regex parser misses,
+  // e.g. "15 kids and 5 adults"). Optional; validated and clamped before use.
+  headcount: z.coerce.number().int().min(1).max(500).optional().nullable().catch(null),
+  budget: z.coerce.number().positive().max(100000).optional().nullable().catch(null),
+  spicyShare: z.coerce.number().min(0).max(1).optional().nullable().catch(null),
   items: z
     .array(
       z.object({
@@ -324,7 +329,243 @@ export function buildSystemPrompt(flavors: FlavorInfo[]) {
     `FLAVORS: ${JSON.stringify(flavors)}`,
     `SIDES (for mini6/large3, included free): ${JSON.stringify(SIDE_IDS)}. SODA choices: ${JSON.stringify(SODA_CHOICES)}. JUICE choices: ${JSON.stringify(JUICE_CHOICES)}.`,
     "Rules: every chicken item (group chicken) needs a flavor id and one free dip flavor id; mini6 and large3 need a side; sandwich may set slaw true/false; soda/juice need a drink choice; extra dips use product 'dip' with a flavor.",
-    "Plan roughly one meal per guest when budget allows. Respect the spicy/mild split (Spicy/Hot/Extreme heat = spicy). Stay at or under the budget when one is given.",
-    'Reply with JSON only: {"summary": string (1-2 friendly sentences), "items": [{"product": id, "qty": int, "flavor"?: flavorId, "dip"?: flavorId, "side"?: sideId, "drink"?: string, "slaw"?: boolean}]}',
+    "Portions: ONE serving = one mini6 meal (6 pieces + side), one large3 meal (3 large drums + side), one sandwich, or 5 pieces of mini1 (mini1 qty counts single pieces, NOT people). The plan must feed every guest: total servings must equal the headcount.",
+    "Spicy split: apply the requested spicy share to servings (flavors whose heat is Spicy/Hot/Extreme count as spicy; prefer Spicy/Hot over Extreme). Use two or three different flavors for variety.",
+    "Budget: when a budget is given, stay at or under it and use most of it (aim for 85-100%); if meals for everyone don't fit, use cheaper sandwiches or mini1 pieces rather than leaving guests without food. Add one drink per guest only if drinks are requested or the budget clearly allows.",
+    "Write the summary as 1-2 friendly sentences that state the headcount covered, the spicy/mild split and the total.",
+    'Reply with JSON only: {"headcount": int|null, "budget": number|null, "spicyShare": number 0-1|null, "summary": string (1-2 friendly sentences, no prices or totals), "items": [{"product": id, "qty": int, "flavor"?: flavorId, "dip"?: flavorId, "side"?: sideId, "drink"?: string, "slaw"?: boolean}]}',
   ].join("\n");
+}
+
+/** Servings a plan provides: meals/sandwiches count 1 each, mini1 pieces count 1/5. */
+export function servingsOf(lines: OrderLine[]) {
+  return lines.reduce(
+    (s, l) =>
+      s +
+      (l.product === "mini6" || l.product === "large3" || l.product === "sandwich"
+        ? l.qty
+        : l.product === "mini1"
+          ? l.qty / 5
+          : 0),
+    0,
+  );
+}
+
+/** Problems worth one AI retry (and a user-facing warning if they persist). */
+export function planIssues(
+  text: string,
+  lines: OrderLine[],
+  flavors: FlavorInfo[],
+  request?: ParsedRequest,
+): string[] {
+  const req = request ?? parseRequest(text);
+  const issues: string[] = [];
+  const servings = servingsOf(lines);
+  const { total } = computeOrder(lines, false);
+  if (req.headcount && servings < req.headcount * 0.9)
+    issues.push(`The plan feeds about ${Math.floor(servings)} of ${req.headcount} guests.`);
+  if (req.budget !== null && total > req.budget + 0.005)
+    issues.push(`The plan costs $${total.toFixed(2)}, over the $${req.budget.toFixed(2)} budget.`);
+  if (req.spicyShare !== null && servings > 0) {
+    const spicyIds = new Set(flavors.filter(isSpicy).map((f) => f.id));
+    const spicy = servingsOf(lines.filter((l) => l.flavor && spicyIds.has(l.flavor)));
+    if (Math.abs(spicy / servings - req.spicyShare) > 0.2)
+      issues.push(
+        `About ${Math.round((spicy / servings) * 100)}% of servings are spicy but ${Math.round(req.spicyShare * 100)}% was requested.`,
+      );
+  }
+  if (req.headcount && /\b(drink|drinks|soda|sodas|beverage|juice)\b/i.test(text)) {
+    const drinks = lines
+      .filter((l) => l.product === "soda" || l.product === "juice")
+      .reduce((s, l) => s + l.qty, 0);
+    if (drinks < req.headcount)
+      issues.push(`Drinks were requested but the plan has ${drinks} for ${req.headcount} guests.`);
+  }
+  return issues;
+}
+
+/** Merge what the regex parser found with what the model understood (parser wins when it found something). */
+export function mergeRequest(
+  parsed: ParsedRequest,
+  ai: {
+    headcount?: number | null | undefined;
+    budget?: number | null | undefined;
+    spicyShare?: number | null | undefined;
+  },
+): ParsedRequest {
+  return {
+    // Take the larger headcount: the regex can catch only part of "15 kids and 5 adults".
+    headcount:
+      parsed.headcount && ai.headcount
+        ? Math.max(parsed.headcount, ai.headcount)
+        : (parsed.headcount ?? ai.headcount ?? null),
+    budget: parsed.budget ?? ai.budget ?? null,
+    spicyShare: parsed.spicyShare ?? ai.spicyShare ?? null,
+  };
+}
+
+/**
+ * Deterministic repair after the model: small models are bad at arithmetic, so if the plan feeds
+ * fewer guests than requested we top it up (same style when the budget allows, otherwise mini pieces),
+ * keeping the spicy/mild split. Never exceeds the budget.
+ */
+export function topUpPlan(
+  lines: OrderLine[],
+  req: ParsedRequest,
+  flavors: FlavorInfo[],
+): { lines: OrderLine[]; added: number } {
+  if (!req.headcount) return { lines, added: 0 };
+  const out = lines.map((l) => ({ ...l }));
+  const spicyIds = new Set(flavors.filter(isSpicy).map((f) => f.id));
+  const { spicy, mild } = pickFlavors(flavors);
+  const share = req.spicyShare ?? 0.5;
+  let added = 0;
+  const room = () => (req.budget === null ? Infinity : req.budget - computeOrder(out, false).total);
+  const add = (line: OrderLine) => {
+    const same = out.find(
+      (l) =>
+        l.product === line.product &&
+        l.flavor === line.flavor &&
+        l.side === line.side &&
+        l.qty + line.qty <= 500,
+    );
+    if (same) same.qty += line.qty;
+    else out.push(line);
+  };
+  for (let guard = 0; guard < 500 && servingsOf(out) < req.headcount - 0.01; guard++) {
+    const served = servingsOf(out);
+    const spicyServed = servingsOf(out.filter((l) => l.flavor && spicyIds.has(l.flavor)));
+    const wantSpicy = spicyServed < share * (served + 1) - 0.01 && share > 0;
+    const f = wantSpicy ? fid(spicy, 0) : fid(mild, 0);
+    if (room() >= PRODUCTS.mini6.price)
+      add({ product: "mini6", flavor: f, dip: f, side: "fries", qty: 1 });
+    else if (room() >= PRODUCTS.mini1.price * 5)
+      add({ product: "mini1", flavor: f, dip: f, qty: 5 });
+    else if (room() >= PRODUCTS.mini1.price)
+      add({ product: "mini1", flavor: f, dip: f, qty: Math.floor(room() / PRODUCTS.mini1.price) });
+    else break;
+    added++;
+  }
+  return { lines: out, added };
+}
+
+/** If drinks were asked for, add sodas up to one per guest within the remaining budget. */
+export function topUpDrinks(
+  text: string,
+  lines: OrderLine[],
+  req: ParsedRequest,
+): { lines: OrderLine[]; added: number } {
+  if (!req.headcount || !/\b(drink|drinks|soda|sodas|beverage|beverages|juice)\b/i.test(text))
+    return { lines, added: 0 };
+  const have = lines
+    .filter((l) => l.product === "soda" || l.product === "juice")
+    .reduce((s, l) => s + l.qty, 0);
+  const room = req.budget === null ? Infinity : req.budget - computeOrder(lines, false).total;
+  const add = Math.max(0, Math.min(req.headcount - have, Math.floor(room / PRODUCTS.soda.price)));
+  if (!add) return { lines, added: 0 };
+  const sodas = split(add, Math.min(2, add)).map((qty, i): OrderLine => ({
+    product: "soda",
+    drink: SODA_CHOICES[i] ?? "Coke",
+    qty,
+  }));
+  return { lines: mergeLines([...lines, ...sodas]), added: add };
+}
+
+/** Facts-only summary computed from the final lines (model text is kept only as flavor text). */
+export function describePlan(lines: OrderLine[], req: ParsedRequest, flavors: FlavorInfo[]) {
+  const spicyIds = new Set(flavors.filter(isSpicy).map((f) => f.id));
+  const servings = servingsOf(lines);
+  const spicy = Math.round(servingsOf(lines.filter((l) => l.flavor && spicyIds.has(l.flavor))));
+  const { total } = computeOrder(lines, false);
+  const feeds = req.headcount
+    ? `Feeds ${Math.min(req.headcount, Math.floor(servings + 0.01))} of ${req.headcount} guests`
+    : `About ${Math.floor(servings)} servings`;
+  const split = ` · ${spicy} spicy / ${Math.max(0, Math.round(servings) - spicy)} mild`;
+  const money =
+    req.budget !== null
+      ? ` · $${total.toFixed(2)} of $${req.budget.toFixed(2)} budget`
+      : ` · $${total.toFixed(2)}`;
+  return feeds + split + money + ".";
+}
+
+/** Merge identical lines (same product and options) so the cart stays tidy. */
+export function mergeLines(lines: OrderLine[]): OrderLine[] {
+  const out: OrderLine[] = [];
+  const key = (l: OrderLine) =>
+    JSON.stringify([l.product, l.flavor, l.dip, l.side, l.drink, l.slaw]);
+  for (const l of lines) {
+    const same = out.find((o) => key(o) === key(l) && o.qty + l.qty <= 500);
+    if (same) same.qty += l.qty;
+    else out.push({ ...l });
+  }
+  return out;
+}
+
+/**
+ * Bring an over-budget plan under budget deterministically while keeping guests fed:
+ * drop extras, then meal -> sandwich (-$1), then sandwich -> 5 mini pieces (-$0.50),
+ * and only as a last resort remove pieces.
+ */
+export function fitBudget(
+  lines: OrderLine[],
+  budget: number | null,
+): { lines: OrderLine[]; changed: boolean } {
+  if (budget === null) return { lines, changed: false };
+  let out = lines.map((l) => ({ ...l }));
+  const over = () => computeOrder(out, false).total > budget + 0.005;
+  if (!over()) return { lines, changed: false };
+  const take = (pred: (l: OrderLine) => boolean, make: (l: OrderLine) => OrderLine | null) => {
+    const l = out.find((x) => pred(x) && x.qty > 0);
+    if (!l) return false;
+    l.qty -= 1;
+    const repl = make(l);
+    if (repl) out.push(repl);
+    out = mergeLines(out.filter((x) => x.qty > 0));
+    return true;
+  };
+  for (let guard = 0; guard < 3000 && over(); guard++) {
+    if (
+      take(
+        (l) => l.product === "dip",
+        () => null,
+      )
+    )
+      continue;
+    if (
+      take(
+        (l) => l.product === "mini6" || l.product === "large3",
+        (l) => ({
+          product: "sandwich",
+          flavor: l.flavor,
+          dip: l.dip ?? l.flavor,
+          slaw: false,
+          qty: 1,
+        }),
+      )
+    )
+      continue;
+    if (
+      take(
+        (l) => l.product === "sandwich",
+        (l) => ({ product: "mini1", flavor: l.flavor, dip: l.dip ?? l.flavor, qty: 5 }),
+      )
+    )
+      continue;
+    if (
+      take(
+        (l) => l.product === "soda" || l.product === "juice",
+        () => null,
+      )
+    )
+      continue;
+    if (
+      take(
+        (l) => l.product === "mini1",
+        () => null,
+      )
+    )
+      continue;
+    break;
+  }
+  return { lines: out, changed: true };
 }
