@@ -10,6 +10,20 @@ their Drip Meter; earned free meals are applied as a PayPal discount.
 
 > Built by InfinityBuilds LLC. MIT licensed (see [LICENSE](LICENSE)).
 
+## Live demo (for judges)
+
+**https://chicky-drip-paypal.danielfrancis109.workers.dev** (Cloudflare Workers, PayPal **sandbox**, no real money)
+
+1. Open the demo, click **Sign in** and create an account (any email + password).
+2. Go to **Order**. In the **Drip Planner** type or click: *"Feeding 40 people, half like spicy, budget $300"* and press **Add all to my order**.
+3. Enter a name + phone and click the yellow **PayPal** button. Log in with a **PayPal sandbox buyer** account:
+   [developer.paypal.com](https://developer.paypal.com) > **Testing Tools** > **Sandbox Accounts** > the *Personal*
+   (buyer) account > **View/Edit account** for the email + password. (Judges' own sandbox accounts work: the demo uses a
+   standard sandbox merchant app.)
+4. Approve the payment. You land on **Rewards**: the order is "Paid via PayPal" and the **Drip Meter** went up by one.
+5. The owner/admin view (**Admin**: payment badges, PayPal capture ids, **AI Insights**) is available to the first
+   account registered on a project; ask the team for an admin login if you want to see it live.
+
 ## For judges: what was added during the hackathon
 
 The repository history starts with a **baseline commit** (`Baseline: Chicky Drip 0.8.0 ...`) that is the
@@ -24,7 +38,7 @@ app exactly as it existed before the update. Everything after it is hackathon wo
 | Free $15 meal subtracted on a request | Free meal sent to PayPal as a **discount line**; fully-covered orders confirmed without PayPal ($0) |
 | Customers had to build big catering orders line by line | **Drip Planner AI**: "feeding 40 people, half like spicy, budget $300" -> a menu-valid order, one click to cart |
 | Admin saw a raw list | Payment badges, PayPal capture ids, hide abandoned checkouts, **AI Insights** summary of paid orders |
-| 17 tests | 55 tests (pricing, rewards, AI validation, PayPal server flow with mocked fetch) |
+| 17 tests | 61 tests (pricing, rewards, AI validation, PayPal server flow with mocked fetch) |
 
 ## How PayPal is used
 
@@ -66,6 +80,7 @@ cp .env.example .env   # fill in values (see below)
 bun run dev            # or: npm run dev   -> http://localhost:5173 (port shown in terminal)
 bun run test           # or: npm test
 bun run build          # or: npm run build (Cloudflare Workers output in .output/)
+# deploy: npx wrangler deploy -c .output/server/wrangler.json   (then set the secrets listed in .env.example as Worker secrets)
 ```
 
 ### 1. Supabase

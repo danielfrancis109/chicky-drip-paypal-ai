@@ -2,7 +2,7 @@
 
 Deadline: **Thu Nov 12, 2026, 3:00 PM ET** (12:00 PM PT). Entrant: InfinityBuilds LLC (Representative: Daniel Francis).
 
-Fill-ins before submitting: `<REPO_URL>`, `<DEMO_URL>`, `<YOUTUBE_URL>`, `de56ade5a6549c97d14860079c35cfb68f85591a`, sandbox buyer login for judges.
+Fill-ins before submitting: `<YOUTUBE_URL>`, `<TEST_LOGIN>` (judge demo account), and the sandbox buyer login for judges. (Repo, demo URL and baseline SHA are filled in.)
 
 ---
 
@@ -74,12 +74,12 @@ breakdown and discount fields map cleanly onto real-world reward programs.
 `zod` `openai-compatible-llm` `vitest` `cloudflare-workers`
 
 ### Links
-* Code: `<REPO_URL>` (MIT license)
-* Demo: `<DEMO_URL>` (or follow README "Run it locally")
+* Code: `https://github.com/danielfrancis109/chicky-drip-paypal-ai` (MIT license)
+* Demo: `https://chicky-drip-paypal.danielfrancis109.workers.dev` (or follow README "Run it locally")
 * Video: `<YOUTUBE_URL>`
 
 ### Testing instructions for judges (paste into Devpost)
-1. Open `<DEMO_URL>` and create an account (any email) or use the test login `<TEST_LOGIN>`.
+1. Open `https://chicky-drip-paypal.danielfrancis109.workers.dev` and create an account (any email) or use the test login `<TEST_LOGIN>`.
 2. Order page > Drip Planner > pick an example prompt > **Add all to my order** > enter name/phone > **PayPal**.
 3. In the PayPal sandbox popup sign in as `<SANDBOX_BUYER_EMAIL>` / `<SANDBOX_BUYER_PASSWORD>`.
 4. You're redirected to Rewards: the order is **Paid via PayPal** and the Drip Meter went up.
@@ -122,7 +122,7 @@ Recording tips: 1080p browser window, sandbox mode, a logged-in customer account
 | 6 | 1:35–1:55 | Redirect to Rewards: "Paid via PayPal" badge, Drip Meter animates to 10/10, "free meal ready" banner | "The order is confirmed and paid, and that payment fills the Drip Meter. Ten paid orders earns a free $15 meal." |
 | 7 | 1:55–2:15 | New small order, tick "Use my free meal", PayPal popup shows the -$15 discount | "Next time, the reward goes straight into PayPal as a discount." |
 | 8 | 2:15–2:35 | Admin > Orders (paid badge, PayPal capture ID, hide unpaid toggle) > AI Insights, click Summarize | "For the owner: paid orders with PayPal capture IDs, abandoned checkouts hidden, and an AI briefing on revenue, top flavors and this week's events to prep for." |
-| 9 | 2:35–2:45 | Code split: `checkout.server.ts` + test run "55 passed" + GitHub repo with MIT license | "Built with TanStack Start, Supabase, PayPal Orders v2 and an OpenAI-compatible model, with 55 tests. Chicky Drip: describe it, pay with PayPal, eat." |
+| 9 | 2:35–2:45 | Code split: `checkout.server.ts` + test run "61 passed" + GitHub repo with MIT license | "Built with TanStack Start, Supabase, PayPal Orders v2 and an OpenAI-compatible model, with 61 tests. Chicky Drip: describe it, pay with PayPal, eat." |
 
 Backup if no AI key is set: the planner card says "Built-in planner (AI not configured, rule-based fallback)". Do
 **not** record that for the final video; set `AI_API_KEY` first so the badge reads "AI recommendation".
