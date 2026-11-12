@@ -22,9 +22,13 @@ export const getPayPalConfig = createServerFn({ method: "GET" }).handler(async (
 /** Turn infrastructure problems (host missing the service-role key, migration not applied yet) into one clear message. */
 function friendlyCheckoutSetupError(e: unknown): Error {
   const msg = e instanceof Error ? e.message : String(e);
-  if (/SUPABASE_SERVICE_ROLE_KEY|Missing Supabase environment/i.test(msg))
+  if (/SUPABASE_SERVICE_ROLE_KEY|SERVER_RPC_TOKEN|Missing Supabase environment/i.test(msg))
     return new Error(
       "Checkout is not fully configured on this server yet (the order database key is missing). The Drip Planner and menu still work.",
+    );
+  if (/invalid_server_token|Could not find the function .*srv_|srv_\w+.*(does not exist|schema cache)/i.test(msg))
+    return new Error(
+      "Checkout is waiting on a database update (run supabase/migrations/20261112000000_server_rpc.sql). The Drip Planner and menu still work.",
     );
   if (/payment_status|paypal_order_id|paypal_capture_id|paid_at|currency/i.test(msg) && /column|schema cache|does not exist/i.test(msg))
     return new Error(
@@ -34,58 +38,21 @@ function friendlyCheckoutSetupError(e: unknown): Error {
 }
 
 async function serverDeps(userId: string) {
-  const [{ supabaseAdmin }, { createPayPalClient, readPayPalConfig }] = await Promise.all([
-    import("@/integrations/supabase/client.server"),
+  const [db, { createPayPalClient, readPayPalConfig }] = await Promise.all([
+    import("@/integrations/supabase/server-db.server").then((m) => m.getServerDb()),
     import("./paypal.server"),
   ]);
   const cfg = readPayPalConfig();
   const paypal = cfg ? createPayPalClient(cfg) : null;
-  const columns =
-    "id,user_id,status,used_reward,payment_status,total,subtotal,discount,paypal_order_id";
   const store: OrderStore = {
-    async listUserOrders(uid) {
-      const { data, error } = await supabaseAdmin.from("orders").select(columns).eq("user_id", uid);
-      if (error) throw new Error("Could not check your rewards. Please try again.");
-      return (data ?? []).map((o) => ({ ...o, total: Number(o.total) })) as StoredOrder[];
-    },
-    async insertOrder(row) {
-      const { data, error } = await supabaseAdmin
-        .from("orders")
-        .insert(row as never)
-        .select("id")
-        .single();
-      if (error || !data) throw new Error(error?.message ?? "Could not save order");
-      return { id: data.id };
-    },
-    async updateOrder(id, patch) {
-      const { error } = await supabaseAdmin
-        .from("orders")
-        .update(patch as never)
-        .eq("id", id)
-        .eq("user_id", userId);
-      if (error) throw new Error(error.message);
-    },
-    async findByPayPalId(uid, paypalOrderId) {
-      const { data, error } = await supabaseAdmin
-        .from("orders")
-        .select(columns)
-        .eq("user_id", uid)
-        .eq("paypal_order_id", paypalOrderId)
-        .maybeSingle();
-      if (error) throw new Error(error.message);
-      return data
-        ? {
-            ...data,
-            total: Number(data.total),
-            subtotal: Number(data.subtotal),
-            discount: Number(data.discount),
-          }
-        : null;
-    },
+    listUserOrders: (uid) => db.listUserOrders(uid) as Promise<StoredOrder[]>,
+    insertOrder: (row) => db.insertOrder(row),
+    // Updates are always scoped to the signed-in customer's own order.
+    updateOrder: (id, patch) => db.updateOrder(id, userId, patch),
+    findByPayPalId: (uid, paypalOrderId) => db.findByPayPalId(uid, paypalOrderId),
   };
-  const { data: content } = await supabaseAdmin.from("site_content").select("key,value");
   const names: Record<string, string> = { ...DEFAULT_CONTENT };
-  for (const r of content ?? []) names[r.key] = r.value;
+  for (const r of await db.siteContent()) names[r.key] = r.value;
   return { store, paypal, flavorName: (id: string) => names[id] ?? id };
 }
 

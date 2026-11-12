@@ -45,7 +45,7 @@ ordering for a party to be as easy as describing the party, and getting paid to 
   labels it clearly.
 * **Data:** one additive SQL migration adds payment status, PayPal order/capture IDs and paid time. Existing orders
   are marked `legacy`, so no customer loses Drip Meter progress.
-* **Quality:** 55 Vitest tests cover pricing, rewards, AI output validation, and the full create/capture flow
+* **Quality:** 69 Vitest tests cover pricing, rewards, AI output validation, and the full create/capture flow
   against a mocked PayPal API.
 
 ### Challenges we ran into
@@ -100,7 +100,7 @@ Oct 1, 2026) we added:
 3. **The Drip Planner AI assistant**, which turns a plain-English event description into a menu-validated order that
    goes straight to PayPal checkout.
 4. **Owner AI Insights** plus payment status and capture IDs in the admin.
-5. **Tests** grew from 17 to 55, covering the PayPal flow and the AI validation.
+5. **Tests** grew from 17 to 69, covering the PayPal flow and the AI validation.
 
 The repo's first commit `de56ade5a6549c97d14860079c35cfb68f85591a` is the pre-hackathon app; `git diff de56ade5a6549c97d14860079c35cfb68f85591a..HEAD` shows the full
 update (about 2,200 lines of new code and tests, 16 new source files plus a SQL migration).
@@ -122,7 +122,7 @@ Recording tips: 1080p browser window, sandbox mode, a logged-in customer account
 | 6 | 1:35–1:55 | Redirect to Rewards: "Paid via PayPal" badge, Drip Meter animates to 10/10, "free meal ready" banner | "The order is confirmed and paid, and that payment fills the Drip Meter. Ten paid orders earns a free $15 meal." |
 | 7 | 1:55–2:15 | New small order, tick "Use my free meal", PayPal popup shows the -$15 discount | "Next time, the reward goes straight into PayPal as a discount." |
 | 8 | 2:15–2:35 | Admin > Orders (paid badge, PayPal capture ID, hide unpaid toggle) > AI Insights, click Summarize | "For the owner: paid orders with PayPal capture IDs, abandoned checkouts hidden, and an AI briefing on revenue, top flavors and this week's events to prep for." |
-| 9 | 2:35–2:45 | Code split: `checkout.server.ts` + test run "61 passed" + GitHub repo with MIT license | "Built with TanStack Start, Supabase, PayPal Orders v2 and an OpenAI-compatible model, with 61 tests. Chicky Drip: describe it, pay with PayPal, eat." |
+| 9 | 2:35–2:45 | Code split: `checkout.server.ts` + test run "69 passed" + GitHub repo with MIT license | "Built with TanStack Start, Supabase, PayPal Orders v2 and an OpenAI-compatible model, with 69 tests. Chicky Drip: describe it, pay with PayPal, eat." |
 
 Backup if no AI key is set: the planner card says "Built-in planner (AI not configured, rule-based fallback)". Do
 **not** record that for the final video; set `AI_API_KEY` first so the badge reads "AI recommendation".
@@ -132,7 +132,7 @@ Backup if no AI key is set: the planner card says "Built-in planner (AI not conf
 ## Submission checklist
 - [ ] PayPal sandbox app created; `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` set on the host
 - [ ] AI key set (`AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`)
-- [ ] Supabase migration `supabase/migrations/20261109000000_paypal_payments.sql` applied; `SUPABASE_SERVICE_ROLE_KEY` on host
+- [ ] Supabase migration `supabase/migrations/20261109000000_paypal_payments.sql` applied; `SUPABASE_SERVICE_ROLE_KEY` on host, or (no service key) `supabase/migrations/20261112000000_server_rpc.sql` applied and `SERVER_RPC_TOKEN` on host
 - [ ] App deployed (Lovable publish or Cloudflare Workers) and the end-to-end sandbox payment tested
 - [ ] Public GitHub repo with LICENSE visible in About; no `.env` committed
 - [ ] YouTube video (public, < 3:00)

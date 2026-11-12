@@ -16,10 +16,10 @@ export const cancelOrder = createServerFn({ method: "POST" })
     if (order.payment_status === "paid") throw new Error("This order is paid. Please contact Chicky Drip to cancel and get a refund.");
     if (!canCustomerCancel(order)) throw new Error("This order can no longer be cancelled");
     // Customers cannot update totals or items; this authorized operation changes only status.
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: updated, error: updateError } = await supabaseAdmin.from("orders")
-      .update({ status: "cancelled" }).eq("id", data.id).eq("user_id", context.userId)
-      .in("status", ["new", "confirmed"]).neq("payment_status", "paid").select("id").maybeSingle();
-    if (updateError || !updated) throw new Error("Could not cancel this order. Please refresh and try again.");
+    const { getServerDb } = await import("@/integrations/supabase/server-db.server");
+    const updated = await (await getServerDb())
+      .cancelOrder(data.id, context.userId)
+      .catch(() => null);
+    if (!updated) throw new Error("Could not cancel this order. Please refresh and try again.");
     return { id: updated.id, status: "cancelled" };
   });

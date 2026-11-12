@@ -38,7 +38,7 @@ app exactly as it existed before the update. Everything after it is hackathon wo
 | Free $15 meal subtracted on a request | Free meal sent to PayPal as a **discount line**; fully-covered orders confirmed without PayPal ($0) |
 | Customers had to build big catering orders line by line | **Drip Planner AI**: "feeding 40 people, half like spicy, budget $300" -> a menu-valid order, one click to cart |
 | Admin saw a raw list | Payment badges, PayPal capture ids, hide abandoned checkouts, **AI Insights** summary of paid orders |
-| 17 tests | 61 tests (pricing, rewards, AI validation, PayPal server flow with mocked fetch) |
+| 17 tests | 69 tests (pricing, rewards, AI validation, PayPal server flow with mocked fetch) |
 
 ## How PayPal is used
 
@@ -92,6 +92,13 @@ bun run build          # or: npm run build (Cloudflare Workers output in .output
   `paypal_capture_id`, `paid_at`, `currency`, marks existing orders `legacy` so their Drip Meter progress is
   unchanged, and adds a unique index on `paypal_order_id`.
 * Put the project URL, publishable (anon) key and **service role key** in `.env`.
+* **No service-role key?** (for example a Lovable Cloud project you do not own): also run
+  3. `supabase/migrations/20261112000000_server_rpc.sql`, and set `SERVER_RPC_TOKEN` (any 64 hex chars) on the host.
+  It adds a private table holding only the SHA-256 hash of that token plus a handful of narrow `SECURITY DEFINER`
+  functions (`srv_*`) that refuse to run without the token. The server then does checkout, cancel and owner
+  insights through those functions with just the publishable key. Generate a token and its hash with
+  `t=$(openssl rand -hex 32); printf %s "$t" | sha256sum`, and put the hash in the migration's `insert` line.
+  If `SUPABASE_SERVICE_ROLE_KEY` is set it is used instead.
 * The first account that signs up becomes the admin (DB trigger).
 
 ### 2. PayPal sandbox
@@ -132,7 +139,7 @@ supabase/migrations/            schema changes for payments
 
 ## Security notes
 
-* Secrets (`PAYPAL_CLIENT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `AI_API_KEY`) are read only in server code; `.env`
+* Secrets (`PAYPAL_CLIENT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` or `SERVER_RPC_TOKEN`, `AI_API_KEY`) are read only in server code; `.env`
   is git-ignored. Only the PayPal client id and Supabase publishable key reach the browser.
 * Prices, rewards and totals are computed on the server; client-sent prices are stripped by the zod schema.
 * Customers cannot self-cancel paid orders (the owner handles refunds).

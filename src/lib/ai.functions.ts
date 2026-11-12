@@ -33,18 +33,13 @@ export const adminInsights = createServerFn({ method: "POST" })
       _role: "admin",
     });
     if (!isAdmin) throw new Error("Admins only");
-    const [{ supabaseAdmin }, { computeInsights, insightText }, { readAiConfig, chatJson }] =
+    const [{ getServerDb }, { computeInsights, insightText }, { readAiConfig, chatJson }] =
       await Promise.all([
-        import("@/integrations/supabase/client.server"),
+        import("@/integrations/supabase/server-db.server"),
         import("./ai/insights"),
         import("./ai/llm.server"),
       ]);
-    const { data: orders, error } = await supabaseAdmin
-      .from("orders")
-      .select("items,total,payment_status,status,event_date,created_at,used_reward")
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (error) throw new Error(error.message);
+    const orders = await (await getServerDb()).adminOrders(500);
     const flavors = await loadFlavors(context.supabase);
     const stats = computeInsights((orders ?? []) as never, flavors, new Date());
     const cfg = readAiConfig();
