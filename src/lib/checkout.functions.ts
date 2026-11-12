@@ -19,6 +19,20 @@ export const getPayPalConfig = createServerFn({ method: "GET" }).handler(async (
   };
 });
 
+/** Turn infrastructure problems (host missing the service-role key, migration not applied yet) into one clear message. */
+function friendlyCheckoutSetupError(e: unknown): Error {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/SUPABASE_SERVICE_ROLE_KEY|Missing Supabase environment/i.test(msg))
+    return new Error(
+      "Checkout is not fully configured on this server yet (the order database key is missing). The Drip Planner and menu still work.",
+    );
+  if (/payment_status|paypal_order_id|paypal_capture_id|paid_at|currency/i.test(msg) && /column|schema cache|does not exist/i.test(msg))
+    return new Error(
+      "Checkout is waiting on a database update (run supabase/migrations/20261109000000_paypal_payments.sql). The Drip Planner and menu still work.",
+    );
+  return e instanceof Error ? e : new Error(msg);
+}
+
 async function serverDeps(userId: string) {
   const [{ supabaseAdmin }, { createPayPalClient, readPayPalConfig }] = await Promise.all([
     import("@/integrations/supabase/client.server"),
@@ -81,8 +95,12 @@ export const createPayPalOrder = createServerFn({ method: "POST" })
   .validator((d: unknown) => checkoutSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { startCheckout } = await import("./checkout.server");
-    const deps = await serverDeps(context.userId);
-    return startCheckout(data, { userId: context.userId, ...deps });
+    const deps = await serverDeps(context.userId).catch((e) => {
+      throw friendlyCheckoutSetupError(e);
+    });
+    return startCheckout(data, { userId: context.userId, ...deps }).catch((e) => {
+      throw friendlyCheckoutSetupError(e);
+    });
   });
 
 /** Step 2 (PayPal button onApprove): capture, verify amount, mark paid, fill the Drip Meter. */
@@ -101,7 +119,9 @@ export const capturePayPalOrder = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { finishCheckout } = await import("./checkout.server");
-    const deps = await serverDeps(context.userId);
+    const deps = await serverDeps(context.userId).catch((e) => {
+      throw friendlyCheckoutSetupError(e);
+    });
     return finishCheckout(data.paypalOrderId, {
       userId: context.userId,
       store: deps.store,

@@ -14,7 +14,7 @@ their Drip Meter; earned free meals are applied as a PayPal discount.
 
 **https://chicky-drip-paypal.danielfrancis109.workers.dev** (Cloudflare Workers, PayPal **sandbox**, no real money)
 
-1. Open the demo, click **Sign in** and create an account (any email + password).
+1. Open the demo, click **Sign in** and use **Continue with Google**, or create an email account (email sign-ups need the confirmation link sent to your inbox).
 2. Go to **Order**. In the **Drip Planner** type or click: *"Feeding 40 people, half like spicy, budget $300"* and press **Add all to my order**.
 3. Enter a name + phone and click the yellow **PayPal** button. Log in with a **PayPal sandbox buyer** account:
    [developer.paypal.com](https://developer.paypal.com) > **Testing Tools** > **Sandbox Accounts** > the *Personal*
