@@ -3,45 +3,31 @@
 -- Why: the hosted demo only has the project's publishable (anon) key. Checkout must create orders,
 -- attach PayPal ids, mark orders paid and cancel unpaid orders, and none of that is allowed for anon
 -- by RLS. Instead of exposing the table, this migration adds a few narrow SECURITY DEFINER functions.
--- Each one first checks a secret server token (only its SHA-256 hash is stored here, in a private
--- schema that anon/authenticated cannot read) and then does exactly one privileged operation.
+-- Each one first checks a secret server token (only its SHA-256 hash appears here, as a literal inside
+-- a function in a private schema that anon/authenticated cannot use) and then does exactly one
+-- privileged operation. This file only defines schema objects and functions (it writes no data itself).
 -- Requires the 20261109000000_paypal_payments.sql columns. Idempotent: safe to run more than once.
 -- Uses only built-in Postgres functions (sha256 needs Postgres 11+), no extensions.
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
 
-create table if not exists private.server_secrets (
-  name text primary key,
-  token_hash text not null,
-  updated_at timestamptz not null default now()
-);
-alter table private.server_secrets enable row level security;
-revoke all on private.server_secrets from public, anon, authenticated;
-
--- Re-running this migration with a different hash rotates the token.
-insert into private.server_secrets (name, token_hash)
-values ('server_rpc', 'a2bd729dbdf45960e325730dec3a6c41dab4e98656513056ca917f44823b4129')
-on conflict (name) do update set token_hash = excluded.token_hash, updated_at = now();
-
-create or replace function private.check_server_token(p_token text)
-returns void language plpgsql stable security definer set search_path = public, pg_catalog as $$
+-- Rotating the token = re-run this migration with a new hash literal below.
+create or replace function private.srv_check_token(p_token text)
+returns void language plpgsql immutable security definer set search_path = public, pg_catalog as $$
 begin
-  if p_token is null or length(p_token) < 32 or not exists (
-    select 1 from private.server_secrets s
-    where s.name = 'server_rpc'
-      and s.token_hash = encode(sha256(convert_to(p_token, 'UTF8')), 'hex')
-  ) then
+  if p_token is null or length(p_token) < 32
+     or encode(sha256(convert_to(p_token, 'utf8')), 'hex') <> 'a2bd729dbdf45960e325730dec3a6c41dab4e98656513056ca917f44823b4129' then
     raise exception 'invalid_server_token' using errcode = '28000';
   end if;
 end $$;
-revoke all on function private.check_server_token(text) from public, anon, authenticated;
+revoke all on function private.srv_check_token(text) from public, anon, authenticated;
 
 -- Health check: srv_ping(token) -> {"ok": true, ...}. Wrong token -> error 28000.
 create or replace function public.srv_ping(p_token text)
 returns jsonb language plpgsql stable security definer set search_path = public, pg_catalog as $$
 begin
-  perform private.check_server_token(p_token);
+  perform private.srv_check_token(p_token);
   return jsonb_build_object(
     'ok', true,
     'payment_columns', (
@@ -56,7 +42,7 @@ end $$;
 create or replace function public.srv_list_user_orders(p_token text, p_user_id uuid)
 returns jsonb language plpgsql stable security definer set search_path = public, pg_catalog as $$
 begin
-  perform private.check_server_token(p_token);
+  perform private.srv_check_token(p_token);
   return coalesce((
     select jsonb_agg(jsonb_build_object(
       'id', o.id, 'user_id', o.user_id, 'status', o.status, 'used_reward', o.used_reward,
@@ -71,7 +57,7 @@ end $$;
 create or replace function public.srv_find_order_by_paypal_id(p_token text, p_user_id uuid, p_paypal_order_id text)
 returns jsonb language plpgsql stable security definer set search_path = public, pg_catalog as $$
 begin
-  perform private.check_server_token(p_token);
+  perform private.srv_check_token(p_token);
   return (
     select jsonb_build_object(
       'id', o.id, 'user_id', o.user_id, 'status', o.status, 'used_reward', o.used_reward,
@@ -92,7 +78,7 @@ declare
   v_payment text := coalesce(p_row->>'payment_status', 'pending');
   v_status text := coalesce(p_row->>'status', 'new');
 begin
-  perform private.check_server_token(p_token);
+  perform private.srv_check_token(p_token);
   if v_payment not in ('pending', 'paid') or v_status not in ('new', 'confirmed') then
     raise exception 'invalid_order_state' using errcode = '22023';
   end if;
@@ -125,7 +111,7 @@ returns boolean language plpgsql volatile security definer set search_path = pub
 declare
   v_n integer;
 begin
-  perform private.check_server_token(p_token);
+  perform private.srv_check_token(p_token);
   if (p_patch -> 'payment_status') is not null and (p_patch->>'payment_status') not in ('pending', 'paid', 'failed') then
     raise exception 'invalid_payment_status' using errcode = '22023';
   end if;
@@ -149,7 +135,7 @@ returns jsonb language plpgsql volatile security definer set search_path = publi
 declare
   v_id uuid;
 begin
-  perform private.check_server_token(p_token);
+  perform private.srv_check_token(p_token);
   update public.orders o set status = 'cancelled'
   where o.id = p_id and o.user_id = p_user_id
     and o.status in ('new', 'confirmed') and o.payment_status <> 'paid'
@@ -163,7 +149,7 @@ end $$;
 create or replace function public.srv_admin_orders(p_token text, p_limit integer default 500)
 returns jsonb language plpgsql stable security definer set search_path = public, pg_catalog as $$
 begin
-  perform private.check_server_token(p_token);
+  perform private.srv_check_token(p_token);
   return coalesce((
     select jsonb_agg(to_jsonb(t)) from (
       select items, total, payment_status, status, event_date, created_at, used_reward
@@ -174,21 +160,17 @@ end $$;
 
 -- Only anon/authenticated (the roles PostgREST uses with the publishable key) may call them, and
 -- every function above refuses to do anything without the correct token.
-do $$
-declare f text;
-begin
-  foreach f in array array[
-    'srv_ping(text)',
-    'srv_list_user_orders(text,uuid)',
-    'srv_find_order_by_paypal_id(text,uuid,text)',
-    'srv_insert_order(text,jsonb)',
-    'srv_update_order(text,uuid,uuid,jsonb)',
-    'srv_cancel_order(text,uuid,uuid)',
-    'srv_admin_orders(text,integer)'
-  ] loop
-    execute format('revoke all on function public.%s from public', f);
-    execute format('grant execute on function public.%s to anon, authenticated', f);
-  end loop;
-end $$;
-
-notify pgrst, 'reload schema';
+revoke all on function public.srv_ping(text) from public;
+grant execute on function public.srv_ping(text) to anon, authenticated;
+revoke all on function public.srv_list_user_orders(text,uuid) from public;
+grant execute on function public.srv_list_user_orders(text,uuid) to anon, authenticated;
+revoke all on function public.srv_find_order_by_paypal_id(text,uuid,text) from public;
+grant execute on function public.srv_find_order_by_paypal_id(text,uuid,text) to anon, authenticated;
+revoke all on function public.srv_insert_order(text,jsonb) from public;
+grant execute on function public.srv_insert_order(text,jsonb) to anon, authenticated;
+revoke all on function public.srv_update_order(text,uuid,uuid,jsonb) from public;
+grant execute on function public.srv_update_order(text,uuid,uuid,jsonb) to anon, authenticated;
+revoke all on function public.srv_cancel_order(text,uuid,uuid) from public;
+grant execute on function public.srv_cancel_order(text,uuid,uuid) to anon, authenticated;
+revoke all on function public.srv_admin_orders(text,integer) from public;
+grant execute on function public.srv_admin_orders(text,integer) to anon, authenticated;

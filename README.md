@@ -94,10 +94,10 @@ bun run build          # or: npm run build (Cloudflare Workers output in .output
 * Put the project URL, publishable (anon) key and **service role key** in `.env`.
 * **No service-role key?** (for example a Lovable Cloud project you do not own): also run
   3. `supabase/migrations/20261112000000_server_rpc.sql`, and set `SERVER_RPC_TOKEN` (any 64 hex chars) on the host.
-  It adds a private table holding only the SHA-256 hash of that token plus a handful of narrow `SECURITY DEFINER`
+  It adds a private checker function holding only the SHA-256 hash of that token plus a handful of narrow `SECURITY DEFINER`
   functions (`srv_*`) that refuse to run without the token. The server then does checkout, cancel and owner
   insights through those functions with just the publishable key. Generate a token and its hash with
-  `t=$(openssl rand -hex 32); printf %s "$t" | sha256sum`, and put the hash in the migration's `insert` line.
+  `t=$(openssl rand -hex 32); printf %s "$t" | sha256sum`, and put the hash in the hash literal in `private.srv_check_token`.
   If `SUPABASE_SERVICE_ROLE_KEY` is set it is used instead.
 * The first account that signs up becomes the admin (DB trigger).
 
