@@ -2,7 +2,7 @@
 
 Deadline: **Thu Nov 12, 2026, 3:00 PM ET** (12:00 PM PT). Entrant: InfinityBuilds LLC (Representative: Daniel Francis).
 
-Fill-ins before submitting: `<REPO_URL>`, `<DEMO_URL>`, `<YOUTUBE_URL>`, `<BASELINE_SHA>`, sandbox buyer login for judges.
+Fill-ins before submitting: `<REPO_URL>`, `<DEMO_URL>`, `<YOUTUBE_URL>`, `de56ade5a6549c97d14860079c35cfb68f85591a`, sandbox buyer login for judges.
 
 ---
 
@@ -102,7 +102,7 @@ Oct 1, 2026) we added:
 4. **Owner AI Insights** plus payment status and capture IDs in the admin.
 5. **Tests** grew from 17 to 55, covering the PayPal flow and the AI validation.
 
-The repo's first commit `<BASELINE_SHA>` is the pre-hackathon app; `git diff <BASELINE_SHA>..HEAD` shows the full
+The repo's first commit `de56ade5a6549c97d14860079c35cfb68f85591a` is the pre-hackathon app; `git diff de56ade5a6549c97d14860079c35cfb68f85591a..HEAD` shows the full
 update (about 2,200 lines of new code and tests, 16 new source files plus a SQL migration).
 
 ---
